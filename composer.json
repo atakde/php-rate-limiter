@@ -1,0 +1,10 @@
+{
+    "name": "atakde/php-rate-limiter",
+    "description": "PHP Rate limiter",
+    "autoload": {
+        "psr-4": {
+            "Atakde\\RateLimiter\\": "src/"
+        }
+    },
+    "require": {}
+}
