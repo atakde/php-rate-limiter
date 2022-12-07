@@ -16,12 +16,18 @@ class RateLimiter
     private int $maxAmmount;
     private int $refillTime;
     private StorageInterface $storage;
+    private array $headers = [
+        'X-RateLimit-Limit' => '{{maxAmmount}}',
+        'X-RateLimit-Remaining' => '{{currentAmmount}}',
+        'X-RateLimit-Reset' => '{{reset}}',
+    ];
 
     public function __construct(array $options, StorageInterface $storage)
     {
         $this->prefix = $options['prefix'];
         $this->maxAmmount = $options['maxAmmount'];
         $this->refillTime = $options['refillTime'];
+        $this->headers = $options['headers'] ?? $this->headers;
         $this->storage = $storage;
     }
 
@@ -73,5 +79,19 @@ class RateLimiter
     {
         $key = $this->prefix . $identifier;
         $this->storage->delete($key);
+    }
+
+    public function headers(string $identifier): array
+    {
+        $key = $this->prefix . $identifier;
+        $lastCheck = $this->storage->get($key . 'last_check');
+        $headers = [];
+        foreach ($this->headers as $key => $value) {
+            $headers[$key] = str_replace('{{maxAmmount}}', $this->maxAmmount, $value);
+            $headers[$key] = str_replace('{{currentAmmount}}', $this->get($identifier), $headers[$key]);
+            $headers[$key] = str_replace('{{reset}}', $lastCheck + $this->refillTime, $headers[$key]);
+        }
+
+        return $headers;
     }
 }
