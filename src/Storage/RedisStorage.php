@@ -21,8 +21,8 @@ class RedisStorage implements StorageInterface
         $this->redis->set($key, $value, $ttl);
     }
 
-    public function getExpirationTime(string $key): int
+    public function delete(string $key)
     {
-        return $this->redis->ttl($key);
+        $this->redis->del($key);
     }
 }

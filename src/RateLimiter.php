@@ -13,101 +13,65 @@ use Atakde\RateLimiter\Storage\StorageInterface;
 class RateLimiter
 {
     private string $prefix;
-    private int $limit;
-    private int $ttl;
+    private int $maxAmmount;
+    private int $refillTime;
     private StorageInterface $storage;
 
     public function __construct(array $options, StorageInterface $storage)
     {
-        $this->prefix = $options['prefix'] ?? 'rate_limiter';
-        $this->limit = $options['limit'] ?? 10;
-        $this->ttl = $options['ttl'] ?? 60;
+        $this->prefix = $options['prefix'];
+        $this->maxAmmount = $options['maxAmmount'];
+        $this->refillTime = $options['refillTime'];
         $this->storage = $storage;
     }
 
     public function check(string $identifier): bool
     {
         $key = $this->prefix . $identifier;
-        $current = $this->storage->get($key);
-
-        if (!$current) {
-            $this->storage->set($key, 1, $this->ttl);
-            return true;
+        // if the bucket does not exist, create it
+        if (!$this->hasBucket($key)) {
+            $this->createBucket($key);
         }
 
-        if ($current < $this->limit) {
-            $this->storage->set($key, $current + 1, $this->ttl);
-            return true;
+        $currentTime = time();
+        $lastCheck = $this->storage->get($key . 'last_check');
+        $tokensToAdd = ($currentTime - $lastCheck) * ($this->maxAmmount / $this->refillTime);
+        $currentAmmount = $this->storage->get($key);
+        // optimization of adding a token every rate ÷ per seconds
+        $bucket = $currentAmmount + $tokensToAdd;
+        // if is greater than max ammount, set it to max ammount
+        $bucket = $bucket > $this->maxAmmount ? $this->maxAmmount : $bucket;
+        // set last check time
+        $this->storage->set($key . 'last_check', $currentTime, $this->refillTime);
+
+        if ($bucket < 1) {
+            return false;
         }
 
-        return false;
+        $this->storage->set($key, $bucket - 1, $this->refillTime);
+        return true;
     }
 
-    public function getLimit(): int
+    private function createBucket(string $key)
     {
-        return $this->limit;
+        $this->storage->set($key . 'last_check', time(), $this->refillTime);
+        $this->storage->set($key, $this->maxAmmount - 1, $this->refillTime);
     }
 
-    public function getTtl(): int
+    private function hasBucket(string $key): bool
     {
-        return $this->ttl;
+        return $this->storage->get($key) !== null;
     }
 
-    public function getPrefix(): string
-    {
-        return $this->prefix;
-    }
-
-    public function getStorage()
-    {
-        return $this->storage;
-    }
-
-    public function setStorage($storage): void
-    {
-        $this->storage = $storage;
-    }
-
-    public function setPrefix(string $prefix): void
-    {
-        $this->prefix = $prefix;
-    }
-
-    public function setLimit(int $limit): void
-    {
-        $this->limit = $limit;
-    }
-
-    public function setTtl(int $ttl): void
-    {
-        $this->ttl = $ttl;
-    }
-
-    public function getRemaining(string $identifier): int
+    public function get(string $identifier): int
     {
         $key = $this->prefix . $identifier;
-        $current = $this->storage->get($key);
-        return !$current ? $this->limit : $this->limit - $current;
+        return $this->storage->get($key);
     }
 
-    public function getReset(string $identifier): int
+    public function delete(string $identifier): void
     {
         $key = $this->prefix . $identifier;
-        return $this->storage->getExpirationTime($key) ?? 0;
-    }
-
-    public function getHeaders(string $identifier): array
-    {
-        return [
-            'X-RateLimit-Limit' => $this->limit,
-            'X-RateLimit-Remaining' => $this->getRemaining($identifier),
-            'X-RateLimit-Reset' => $this->getReset($identifier)
-        ];
-    }
-
-    public function purge(string $identifier): void
-    {
-        $key = $this->prefix . $identifier;
-        $this->storage->set($key, 0, 1);
+        $this->storage->delete($key);
     }
 }
